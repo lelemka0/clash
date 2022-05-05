@@ -1,6 +1,7 @@
 package outboundgroup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,22 +40,22 @@ func parseStrategy(config map[string]any) string {
 }
 
 func getKey(metadata *C.Metadata) string {
+	var keyBuffer bytes.Buffer
 	if metadata.Host != "" {
 		// ip host
 		if ip := net.ParseIP(metadata.Host); ip != nil {
-			return metadata.Host
+			keyBuffer.WriteString(metadata.Host)
 		}
 
 		if etld, err := publicsuffix.EffectiveTLDPlusOne(metadata.Host); err == nil {
-			return etld
+			keyBuffer.WriteString(etld)
 		}
+	} else if metadata.DstIP != nil {
+		keyBuffer.WriteString(metadata.DstIP.String())
 	}
-
-	if metadata.DstIP == nil {
-		return ""
-	}
-
-	return metadata.DstIP.String()
+	keyBuffer.WriteString(",")
+	keyBuffer.WriteString(metadata.SrcIP.String())
+	return keyBuffer.String()
 }
 
 func jumpHash(key uint64, buckets int32) int32 {

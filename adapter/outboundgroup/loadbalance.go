@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
+	"time"
 
 	"github.com/Dreamacro/clash/adapter/outbound"
 	"github.com/Dreamacro/clash/common/murmur3"
@@ -133,6 +135,49 @@ func strategyConsistentHashing() strategyFn {
 	}
 }
 
+func strategyStickySessions() strategyFn {
+	timeout := int64(600)
+	type Session struct {
+		available bool
+		idx       int
+		time      time.Time
+	}
+	Sessions := make(map[string]map[string]Session)
+	return func(proxies []C.Proxy, metadata *C.Metadata) C.Proxy {
+		src := metadata.SrcIP.String()
+		dest := getKey(metadata)
+		now := time.Now()
+		length := len(proxies)
+		if Sessions[src] == nil {
+			Sessions[src] = make(map[string]Session)
+		}
+		session := Sessions[src][dest]
+		if !session.available || now.Unix()-session.time.Unix() > timeout {
+			session.idx = rand.Intn(length)
+		}
+		session.available = true
+		session.time = now
+
+		var i int
+		var res C.Proxy
+		for i := 0; i < length; i++ {
+			idx := (session.idx + i) % length
+			proxy := proxies[idx]
+			if proxy.Alive() {
+				session.idx = idx
+				res = proxy
+				break
+			}
+		}
+		if i == length {
+			session.idx = 0
+			res = proxies[0]
+		}
+		Sessions[src][dest] = session
+		return res
+	}
+}
+
 // Unwrap implements C.ProxyAdapter
 func (lb *LoadBalance) Unwrap(metadata *C.Metadata) C.Proxy {
 	proxies := lb.proxies(true)
@@ -166,6 +211,8 @@ func NewLoadBalance(option *GroupCommonOption, providers []provider.ProxyProvide
 		strategyFn = strategyConsistentHashing()
 	case "round-robin":
 		strategyFn = strategyRoundRobin()
+	case "sticky-sessions":
+		strategyFn = strategyStickySessions()
 	default:
 		return nil, fmt.Errorf("%w: %s", errStrategy, strategy)
 	}

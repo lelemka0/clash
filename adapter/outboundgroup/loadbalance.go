@@ -138,9 +138,8 @@ func strategyConsistentHashing() strategyFn {
 func strategyStickySessions() strategyFn {
 	timeout := int64(600)
 	type Session struct {
-		available bool
-		idx       int
-		time      time.Time
+		idx  int
+		time time.Time
 	}
 	Sessions := make(map[string]map[string]Session)
 	return func(proxies []C.Proxy, metadata *C.Metadata) C.Proxy {
@@ -151,11 +150,10 @@ func strategyStickySessions() strategyFn {
 		if Sessions[src] == nil {
 			Sessions[src] = make(map[string]Session)
 		}
-		session := Sessions[src][dest]
-		if !session.available || now.Unix()-session.time.Unix() > timeout {
+		session, ok := Sessions[src][dest]
+		if !ok || now.Unix()-session.time.Unix() > timeout {
 			session.idx = rand.Intn(length)
 		}
-		session.available = true
 		session.time = now
 
 		var i int

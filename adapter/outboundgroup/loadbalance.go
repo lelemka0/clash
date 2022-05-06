@@ -142,6 +142,19 @@ func strategyStickySessions() strategyFn {
 		time time.Time
 	}
 	Sessions := make(map[string]map[string]Session)
+	go func() {
+		for true {
+			time.Sleep(time.Second * 60)
+			now := time.Now().Unix()
+			for _, subMap := range Sessions {
+				for dest, session := range subMap {
+					if now-session.time.Unix() > timeout {
+						delete(subMap, dest)
+					}
+				}
+			}
+		}
+	}()
 	return func(proxies []C.Proxy, metadata *C.Metadata) C.Proxy {
 		src := metadata.SrcIP.String()
 		dest := getKey(metadata)
